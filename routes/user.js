@@ -1,5 +1,6 @@
 const jsonFile = require('jsonfile');
 const getSign = require('../util/sign');
+const { hash33, getGtk, getGuid } = require('../util/loginUtils');
 
 const user = {
   '/cookie': ({req, res, globalCookie}) => {
@@ -75,6 +76,7 @@ const user = {
     });
     return res.send({
       result: 100,
+      data: cookieObj,
       message: '设置 cookie 成功',
     })
   },
@@ -93,13 +95,14 @@ const user = {
     }
     userCookie.uin = (userCookie.uin || '').replace(/\D/g, '');
     allCookies[userCookie.uin] = userCookie;
-    jsonFile.writeFile('data/allCookies.json', allCookies);
+    jsonFile.writeFile('data/allCookies.json', allCookies, globalCookie.refreshAllCookies);
 
     // 这里写死我的企鹅号，作为存在服务器上的cookie
     if (String(userCookie.uin) === String(global.QQ)) {
       globalCookie.updateUserCookie(userCookie);
-      jsonFile.writeFile('data/cookie.json', userCookie);
+      jsonFile.writeFile('data/cookie.json', userCookie, globalCookie.refreshUserCookie);
     }
+
     res.set('Access-Control-Allow-Origin', 'https://y.qq.com');
     res.set('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE');
     res.set('Access-Control-Allow-Headers', 'Content-Type');
@@ -476,6 +479,130 @@ const user = {
       data: result.list,
     })
   },
+
+  // 获取qq登录二维码
+  '/getLoginQr/qq': async ({req, res, request}) => {
+    const url = 'https://ssl.ptlogin2.qq.com/ptqrshow?appid=716027609&e=2&l=M&s=3&d=72&v=4&t=0.9698127522807933&daid=383&pt_3rd_aid=100497308&u1=https%3A%2F%2Fgraph.qq.com%2Foauth2.0%2Flogin_jump';
+    const response = await request(url, { responseType: 'arraybuffer', getResp: true } );
+    const img = "data:image/png;base64," + (response.data && Buffer.from(response.data).toString('base64'));
+    const qrsig = response.headers['set-cookie'][0]?.match(/qrsig=([^;]+)/)[1];
+    res.send({ img, ptqrtoken: hash33(qrsig), qrsig });
+  },
+
+  // 检查qq登录二维码
+  '/checkLoginQr/qq': async ({req, res, request, globalCookie}) => {
+    // 使用该接口请在app.js中修改ownCookie为1
+    try {
+      const { ptqrtoken, qrsig } = req.body;
+      if (!ptqrtoken || !qrsig) res.send({ result: 500, errMsg: '参数错误' });
+      console.log(ptqrtoken, qrsig)
+      const url = `https://ssl.ptlogin2.qq.com/ptqrlogin?u1=https%3A%2F%2Fgraph.qq.com%2Foauth2.0%2Flogin_jump&ptqrtoken=${ptqrtoken}&ptredirect=0&h=1&t=1&g=1&from_ui=1&ptlang=2052&action=0-0-1711022193435&js_ver=23111510&js_type=1&login_sig=du-YS1h8*0GqVqcrru0pXkpwVg2DYw-DtbFulJ62IgPf6vfiJe*4ONVrYc5hMUNE&pt_uistyle=40&aid=716027609&daid=383&pt_3rd_aid=100497308&&o1vId=3674fc47871e9c407d8838690b355408&pt_js_version=v1.48.1`;
+      const response = await request({ url, headers: { Cookie: `qrsig=${qrsig}` }}, { getResp: true, customCookie: true });
+      if (!response?.data) return res.send({ result: 500, errMsg: '接口返回失败，请检查参数' });
+      const { data = '' } = response;
+      let allCookie = [];
+      const setCookie = cookies => {
+        allCookie = [...allCookie, ...cookies.map(i => i.split(';')[0]).filter(i => i.split('=')[1])];
+      };
+
+      const refresh = data.includes('已失效');
+      if (!data.includes('登录成功')) return res.send({ isOk: false, refresh, message: refresh && '二维码已失效' || '未扫描二维码' });
+      
+      setCookie(response.headers['set-cookie']);
+
+      // 获取p_skey 与gtk
+      const checkSigUrl = data.match(/(?:'((?:https?|ftp):\/\/[^\s/$.?#].[^\s]*)')/g)[0].replaceAll('\'', '');
+      const checkSigRes = await fetch(checkSigUrl, { redirect: 'manual', headers: { Cookie: allCookie.join('; ') } });
+      const p_skey = checkSigRes.headers.get('Set-Cookie').match(/p_skey=([^;]+)/)[1];
+      const gtk = getGtk(p_skey);
+      setCookie(checkSigRes.headers.get('Set-Cookie').split(';, '));
+
+      // authorize
+      const authorizeUrl = 'https://graph.qq.com/oauth2.0/authorize';
+      const getAuthorizeData = (gtk) => {
+        let data = new FormData();
+        data.append('response_type', 'code');
+        data.append('client_id', 100497308);
+        data.append('redirect_uri', 'https://y.qq.com/portal/wx_redirect.html?login_type=1&surl=https://y.qq.com/');
+        data.append('scope', 'get_user_info,get_app_friends');
+        data.append('state', 'state');
+        data.append('switch', '');
+        data.append('from_ptlogin', 1);
+        data.append('src', 1);
+        data.append('update_auth', 1);
+        data.append('openapi', '1010_1030');
+        data.append('g_tk', gtk);
+        data.append('auth_time', new Date);
+        data.append('ui', getGuid());
+        return data;
+      };
+
+      const authorizeRes = await fetch(authorizeUrl, {
+        redirect: 'manual',
+        method: 'POST',
+        body: getAuthorizeData(gtk),
+        headers: {
+          Cookie: allCookie.join('; ')
+        }
+      });
+      const code = authorizeRes.headers.get('Location').match(/[?&]code=([^&]+)/)[1];
+
+      // login
+      const getFcgReqData = (g_tk, code) => {
+        const data = {
+          comm: {
+            "g_tk":g_tk,
+            "platform":"yqq",
+            "ct":24,
+            "cv":0
+          }, req: {
+            "module":"QQConnectLogin.LoginServer",
+            "method":"QQLogin",
+            "param": {
+              "code":code
+            }
+          }
+        };
+        return JSON.stringify(data);
+      };
+
+      const loginUrl = 'https://u.y.qq.com/cgi-bin/musicu.fcg';
+      const loginRes = await fetch(loginUrl, {
+        method: 'POST',
+        body: getFcgReqData(gtk, code),
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Cookie: allCookie.join('; ')
+        }
+      });
+      setCookie(loginRes.headers.get('Set-Cookie').split(';, '));
+
+      const allCookies = globalCookie.allCookies();
+      const userCookie = {};
+      allCookie.forEach((c) => {
+        const arr = c.split('=');
+        userCookie[arr[0]] = arr[1];
+      });
+
+      if (Number(userCookie.login_type) === 2) {
+        userCookie.uin = userCookie.wxuin;
+      }
+      userCookie.uin = (userCookie.uin || '').replace(/\D/g, '');
+      allCookies[userCookie.uin] = userCookie;
+      jsonFile.writeFile('data/allCookies.json', allCookies, globalCookie.refreshAllCookies);
+
+      // 这里写死我的企鹅号，作为存在服务器上的cookie
+      if (String(userCookie.uin) === String(global.QQ)) {
+        globalCookie.updateUserCookie(userCookie);
+        jsonFile.writeFile('data/cookie.json', userCookie, globalCookie.refreshUserCookie);
+      }
+
+      return res.send({ isOk: true, message: '登录成功' });
+    } catch (error) {
+      res.send({ result: 500, errMsg: 'some errors' });
+    }
+    
+  }
 };
 
 module.exports = user;

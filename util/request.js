@@ -46,9 +46,13 @@ module.exports = (req, res, {globalCookie} = {}) => {
       obj.headers = obj.headers || {};
       obj.xsrfCookieName = 'XSRF-TOKEN';
       obj.withCredentials = true;
-      obj.headers.Cookie = Object.keys(cookieObj).map((k) => `${k}=${encodeURI(cookieObj[k])}`).join('; ');
+      obj.headers.Cookie = opts?.customCookie && obj.headers.Cookie || Object.keys(cookieObj).map((k) => `${k}=${encodeURI(cookieObj[k])}`).join('; ');
 
-      const response = await axios(obj);
+      const response = await axios({ ...obj, ...opts });
+      
+      if (opts?.getResp) {
+        return response;
+      }
 
       if (opts.dataType === 'xml') {
         return handleXml(response.data.replace(/(<!--)|(-->)/g, ''));
