@@ -485,7 +485,7 @@ const user = {
     const url = 'https://ssl.ptlogin2.qq.com/ptqrshow?appid=716027609&e=2&l=M&s=3&d=72&v=4&t=0.9698127522807933&daid=383&pt_3rd_aid=100497308&u1=https%3A%2F%2Fgraph.qq.com%2Foauth2.0%2Flogin_jump';
     const response = await request(url, { responseType: 'arraybuffer', getResp: true } );
     const img = "data:image/png;base64," + (response.data && Buffer.from(response.data).toString('base64'));
-    const qrsig = response.headers['set-cookie'][0]?.match(/qrsig=([^;]+)/)[1];
+    const qrsig = response.headers['set-cookie'][0] && response.headers['set-cookie'][0].match(/qrsig=([^;]+)/)[1];
     res.send({ result: 100, img, ptqrtoken: hash33(qrsig), qrsig });
   },
 
@@ -497,7 +497,7 @@ const user = {
       if (!ptqrtoken || !qrsig) return res.send({ isOk: false, result: 500, errMsg: '参数错误' });
       const url = `https://ssl.ptlogin2.qq.com/ptqrlogin?u1=https%3A%2F%2Fgraph.qq.com%2Foauth2.0%2Flogin_jump&ptqrtoken=${ptqrtoken}&ptredirect=0&h=1&t=1&g=1&from_ui=1&ptlang=2052&action=0-0-1711022193435&js_ver=23111510&js_type=1&login_sig=du-YS1h8*0GqVqcrru0pXkpwVg2DYw-DtbFulJ62IgPf6vfiJe*4ONVrYc5hMUNE&pt_uistyle=40&aid=716027609&daid=383&pt_3rd_aid=100497308&&o1vId=3674fc47871e9c407d8838690b355408&pt_js_version=v1.48.1`;
       const response = await request({ url, headers: { Cookie: `qrsig=${qrsig}` }}, { getResp: true, customCookie: true });
-      if (!response?.data) return res.send({ isOk: false, result: 500, errMsg: '接口返回失败，请检查参数' });
+      if (!response.data) return res.send({ isOk: false, result: 500, errMsg: '接口返回失败，请检查参数' });
       const { data = '' } = response;
       let allCookie = [];
       const setCookie = cookies => {
