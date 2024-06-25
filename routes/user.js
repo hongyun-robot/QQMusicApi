@@ -486,7 +486,7 @@ const user = {
     const response = await request(url, { responseType: 'arraybuffer', getResp: true } );
     const img = "data:image/png;base64," + (response.data && Buffer.from(response.data).toString('base64'));
     const qrsig = response.headers['set-cookie'][0]?.match(/qrsig=([^;]+)/)[1];
-    res.send({ img, ptqrtoken: hash33(qrsig), qrsig });
+    res.send({ result: 100, img, ptqrtoken: hash33(qrsig), qrsig });
   },
 
   // 检查qq登录二维码
@@ -494,11 +494,10 @@ const user = {
     // 使用该接口请在app.js中修改ownCookie为1
     try {
       const { ptqrtoken, qrsig } = req.body;
-      if (!ptqrtoken || !qrsig) res.send({ result: 500, errMsg: '参数错误' });
-      console.log(ptqrtoken, qrsig)
+      if (!ptqrtoken || !qrsig) return res.send({ isOk: false, result: 500, errMsg: '参数错误' });
       const url = `https://ssl.ptlogin2.qq.com/ptqrlogin?u1=https%3A%2F%2Fgraph.qq.com%2Foauth2.0%2Flogin_jump&ptqrtoken=${ptqrtoken}&ptredirect=0&h=1&t=1&g=1&from_ui=1&ptlang=2052&action=0-0-1711022193435&js_ver=23111510&js_type=1&login_sig=du-YS1h8*0GqVqcrru0pXkpwVg2DYw-DtbFulJ62IgPf6vfiJe*4ONVrYc5hMUNE&pt_uistyle=40&aid=716027609&daid=383&pt_3rd_aid=100497308&&o1vId=3674fc47871e9c407d8838690b355408&pt_js_version=v1.48.1`;
       const response = await request({ url, headers: { Cookie: `qrsig=${qrsig}` }}, { getResp: true, customCookie: true });
-      if (!response?.data) return res.send({ result: 500, errMsg: '接口返回失败，请检查参数' });
+      if (!response?.data) return res.send({ isOk: false, result: 500, errMsg: '接口返回失败，请检查参数' });
       const { data = '' } = response;
       let allCookie = [];
       const setCookie = cookies => {
@@ -506,7 +505,7 @@ const user = {
       };
 
       const refresh = data.includes('已失效');
-      if (!data.includes('登录成功')) return res.send({ isOk: false, refresh, message: refresh && '二维码已失效' || '未扫描二维码' });
+      if (!data.includes('登录成功')) return res.send({ isOk: false, result: 500, refresh, errMsg: refresh && '二维码已失效' || '未扫描二维码' });
       
       setCookie(response.headers['set-cookie']);
 
@@ -597,9 +596,9 @@ const user = {
         jsonFile.writeFile('data/cookie.json', userCookie, globalCookie.refreshUserCookie);
       }
 
-      return res.send({ isOk: true, message: '登录成功' });
+      return res.send({ isOk: true, result: 100, message: '登录成功' });
     } catch (error) {
-      res.send({ result: 500, errMsg: 'some errors' });
+      return res.send({ isOk: false, result: 500, errMsg: 'some errors' });
     }
     
   }
