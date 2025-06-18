@@ -1,9 +1,11 @@
 const search = require('./search');
+const g_tk = require('../util/g_tk');
+const { SongTypeMap, EncryptedSongTypeMap } = require('../util/songFileType');
 
 const song = {
-  '/': async ({req, res, request}) => {
+  '/': async ({ req, res, request }) => {
     const url = 'http://u.y.qq.com/cgi-bin/musicu.fcg';
-    const {songmid, raw} = req.query;
+    const { songmid, raw } = req.query;
 
     if (!songmid) {
       return res.send({
@@ -23,50 +25,42 @@ const song = {
       }),
     };
 
-    const result = await request({url, data});
+    const result = await request({ url, data });
 
     if (Number(raw)) {
       return res.send(result);
     }
 
     res &&
-    res.send({
-      result: 100,
-      data: result.songinfo.data,
-    });
+      res.send({
+        result: 100,
+        data: result.songinfo.data,
+      });
     return result.songinfo.data;
   },
 
-  '/url': async ({req, res, request, cache, globalCookie}) => {
-    const obj = {...req.query, ...req.body};
-    let {uin, qqmusic_key} = globalCookie.userCookie();
+  '/url': async ({ req, res, request, cache, globalCookie }) => {
+    const obj = { ...req.query, ...req.body };
+    let { uin, qqmusic_key } = req?.cookies || globalCookie.userCookie();
     if (Number(obj.ownCookie)) {
       uin = req.cookies.uin || uin;
     }
 
-    const {id, type = '128', mediaId = id, isRedirect = '0'} = obj;
-    const typeMap = {
-      m4a: {
-        s: 'C400',
-        e: '.m4a',
-      },
-      128: {
-        s: 'M500',
-        e: '.mp3',
-      },
-      320: {
-        s: 'M800',
-        e: '.mp3',
-      },
-      ape: {
-        s: 'A000',
-        e: '.ape',
-      },
-      flac: {
-        s: 'F000',
-        e: '.flac',
-      },
-    };
+    const {
+      id,
+      type = 'MP3_128',
+      mediaId = id,
+      isRedirect = '0',
+      encrypted = '0',
+    } = obj;
+    let module = 'music.vkey.GetVkey';
+    let method = 'UrlGetVkey';
+    let typeMap = SongTypeMap;
+    if (!!+encrypted) {
+      module = 'music.vkey.GetEVkey';
+      method = 'CgiGetEVkey';
+      typeMap = EncryptedSongTypeMap;
+    }
     const typeObj = typeMap[type];
 
     if (!typeObj) {
@@ -98,7 +92,8 @@ const song = {
         url: 'https://u.y.qq.com/cgi-bin/musicu.fcg',
         data: {
           '-': 'getplaysongvkey',
-          g_tk: 5381,
+          g_tk: g_tk(qqmusic_key),
+          g_tk_new_20200303: g_tk(qqmusic_key),
           loginUin: uin,
           hostUin: 0,
           format: 'json',
@@ -108,8 +103,8 @@ const song = {
           needNewCode: 0,
           data: JSON.stringify({
             req_0: {
-              module: 'vkey.GetVkeyServer',
-              method: 'CgiGetVkey',
+              module,
+              method,
               param: {
                 filename: [file],
                 guid: guid,
@@ -164,15 +159,15 @@ const song = {
     cache.set(cacheKey, cacheData);
   },
 
-  '/urls': async ({req, res, request, globalCookie, cache}) => {
-    const obj = {...req.query, ...req.body};
+  '/urls': async ({ req, res, request, globalCookie, cache }) => {
+    const obj = { ...req.query, ...req.body };
     let uin = globalCookie.userCookie().uin;
 
     if (Number(obj.ownCookie)) {
       uin = req.cookies.uin || uin;
     }
 
-    const {id = ''} = obj;
+    const { id = '' } = obj;
     const idArr = id.split(',');
     let count = 0;
     const idStr = idArr.map(id => `"${id}"`).join(',');
@@ -227,8 +222,8 @@ const song = {
   },
 
   // 相似歌曲
-  '/similar': async ({req, res, request}) => {
-    const {id, raw} = req.query;
+  '/similar': async ({ req, res, request }) => {
+    const { id, raw } = req.query;
     if (!id) {
       return res.send({
         result: 500,
@@ -276,8 +271,8 @@ const song = {
   },
 
   // 相关歌单
-  '/playlist': async ({req, res, request}) => {
-    const {id, raw} = req.query;
+  '/playlist': async ({ req, res, request }) => {
+    const { id, raw } = req.query;
     if (!id) {
       return res.send({
         result: 500,
@@ -328,8 +323,8 @@ const song = {
   },
 
   // 相关 mv
-  '/mv': async ({req, res, request}) => {
-    const {id, raw} = req.query;
+  '/mv': async ({ req, res, request }) => {
+    const { id, raw } = req.query;
     if (!id) {
       return res.send({
         result: 500,
