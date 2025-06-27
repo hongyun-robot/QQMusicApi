@@ -1,4 +1,7 @@
 function g_tk(qqmusic_key) {
+  if (!qqmusic_key) {
+    return null;
+  }
   let n = 5381;
   const t = qqmusic_key;
   // if (t = e ? l("qqmusic_key") || l("p_skey") || l("skey") || l("p_lskey") || l("lskey") : l("skey") || l("qqmusic_key"))

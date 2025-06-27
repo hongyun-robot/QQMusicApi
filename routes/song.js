@@ -1,5 +1,10 @@
 const search = require('./search');
 const g_tk = require('../util/g_tk');
+const {
+  zzcSign,
+  decodeAG1Response,
+  encodeAG1Request,
+} = require('@jixun/qmweb-sign');
 const { SongTypeMap, EncryptedSongTypeMap } = require('../util/songFileType');
 
 const song = {
@@ -26,6 +31,11 @@ const song = {
     };
 
     const result = await request({ url, data });
+
+    result.songinfo.data.track_info.action.mswitch =
+      result.songinfo.data.track_info.action.switch;
+
+    delete result.songinfo.data.track_info.action.switch;
 
     if (Number(raw)) {
       return res.send(result);
@@ -79,70 +89,79 @@ const song = {
     const guid = (Math.random() * 10000000).toFixed(0);
 
     let purl = '';
-    let count = 0;
     let cacheKey = `song_url_${file}`;
     let cacheData = cache.get(cacheKey);
     if (cacheData) {
       return res.send(cacheData);
     }
     let domain = '';
-    while (!purl && count < 10) {
-      count += 1;
-      const result = await request({
-        url: 'https://u.y.qq.com/cgi-bin/musicu.fcg',
-        data: {
-          '-': 'getplaysongvkey',
-          g_tk: g_tk(qqmusic_key),
-          g_tk_new_20200303: g_tk(qqmusic_key),
-          loginUin: uin,
-          hostUin: 0,
-          format: 'json',
-          inCharset: 'utf8',
-          outCharset: 'utf-8¬ice=0',
-          platform: 'yqq.json',
-          needNewCode: 0,
-          data: JSON.stringify({
-            req_0: {
-              module,
-              method,
-              param: {
-                filename: [file],
-                guid: guid,
-                songmid: [id],
-                songtype: [0],
-                uin: uin,
-                loginflag: 1,
-                platform: '20',
-              },
-            },
-            comm: {
-              uin: uin,
-              format: 'json',
-              ct: 19,
-              cv: 0,
-              authst: qqmusic_key,
-            },
-          }),
+    const payload = JSON.stringify({
+      comm: {
+        cv: 4747474,
+        ct: 24,
+        format: 'json',
+        inCharset: 'utf-8',
+        outCharset: 'utf-8',
+        notice: 0,
+        platform: 'yqq.json',
+        needNewCode: 1,
+        uin,
+        g_tk_new_20200303: g_tk(qqmusic_key),
+        g_tk: g_tk(qqmusic_key),
+      },
+      req_0: {
+        module,
+        method,
+        param: {
+          filename: [`${typeObj.s}${id}${id}${typeObj.e}`],
+          guid,
+          songmid: [id],
+          songtype: [0],
+          uin: `${uin}`,
+          loginflag: 1,
+          platform: '20',
+          xcdn: 1,
+          qdesc: 'lq96kOgg',
         },
+      },
+    });
+    const body = await encodeAG1Request(payload);
+    const sign = zzcSign(payload);
+    const url = `https://u6.y.qq.com/cgi-bin/musics.fcg?_=${Date.now()}&encoding=ag-1&sign=${sign}`;
+
+    const result = await request(
+      {
+        url,
+        method: 'post',
+        data: body,
+        headers: {
+          'content-type': 'text/plain',
+        },
+      },
+      {
+        responseType: 'arraybuffer',
+      },
+    );
+    const respText = decodeAG1Response(result);
+    const data = JSON.parse(respText);
+    if (res && !data.req_0.data) {
+      return res.send({
+        result: 400,
+        errMsg: '获取链接出错，建议检查是否携带 cookie ',
       });
-      if (res && !result.req_0.data) {
-        return res.send({
-          result: 400,
-          errMsg: '获取链接出错，建议检查是否携带 cookie ',
-        });
-      }
-      if (result.req_0 && result.req_0.data && result.req_0.data.midurlinfo) {
-        purl = result.req_0.data.midurlinfo[0].purl;
-      }
-      if (domain === '') {
-        domain =
-          result.req_0.data.sip.find(i => !i.startsWith('http://ws')) ||
-          result.req_0.data.sip[0];
-      }
+    }
+    if (data.req_0 && data.req_0.data && data.req_0.data.midurlinfo) {
+      purl = data.req_0.data.midurlinfo[0].purl;
+    }
+    if (domain === '') {
+      domain =
+        data.req_0.data.sip.find(i => !i.startsWith('http://ws')) ||
+        data.req_0.data.sip[0];
     }
     if (!purl) {
       return res.send({
         result: 400,
+        data,
         errMsg: '获取播放链接出错',
       });
     }
@@ -152,7 +171,10 @@ const song = {
     }
 
     cacheData = {
-      data: `${domain}${purl}`,
+      data: {
+        url: `${domain}${purl}`,
+        rawData: data,
+      },
       result: 100,
     };
     res.send(cacheData);

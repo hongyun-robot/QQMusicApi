@@ -1,5 +1,6 @@
 const jsonFile = require('jsonfile');
 const getSign = require('../util/sign');
+const g_tk = require('../util/g_tk');
 const { hash33, getGtk, getGuid } = require('../util/loginUtils');
 
 const user = {
@@ -11,53 +12,83 @@ const user = {
   },
 
   '/refresh': async ({ req, res, request }) => {
-    // req
-    const { uin, qm_keyst, qqmusic_key } = req.cookies;
-    if (!uin || !(qm_keyst || qqmusic_key)) {
-      return res.send({
-        result: 301,
-        errMsg: '未登陆',
-      });
-    }
-    const data = {
-      req1: {
-        module: 'QQConnectLogin.LoginServer',
-        method: 'QQLogin',
+    const { uin, qm_keyst, qqmusic_key, refresh_key, refresh_token } =
+      req.cookies;
+    const payload = {
+      comm: {
+        cv: 4747474,
+        ct: 24,
+        format: 'json',
+        inCharset: 'utf-8',
+        outCharset: 'utf-8',
+        notice: 0,
+        platform: 'yqq.json',
+        needNewCode: 1,
+        uin,
+        g_tk_new_20200303: g_tk(req.cookies.qqmusic_key),
+        g_tk: g_tk(req.cookies.qqmusic_key),
+        tmeLoginType: req.cookies.login_type,
+      },
+      req_1: {
+        module: 'music.login.LoginServer',
+        method: 'Login',
         param: {
-          expired_in: 7776000, //不用管
-          // onlyNeedAccessToken: 0, //不用管
-          // forceRefreshToken: 0, //不用管
-          // access_token: "6B0C62126368CA1ACE16C932C679747E", //access_token
-          // refresh_token: "25BACF1650EE2592D06BCC19EEAD7AD6", //refresh_token
-          musicid: uin, //uin或者web_uin 微信没试过
-          musickey: qm_keyst || qqmusic_key, //key
+          refresh_key,
+          refresh_token,
+          musickey: qqmusic_key,
+          musicid: req.cookies.musicid,
         },
       },
     };
-    const sign = getSign(data);
-    let url = `https://u6.y.qq.com/cgi-bin/musics.fcg?sign=${sign}&format=json&inCharset=utf8&outCharset=utf-8&data=${encodeURIComponent(
-      JSON.stringify(data),
-    )}`;
-
-    const result = await request({ url });
-
-    if (result.req1 && result.req1.data && result.req1.data.musickey) {
-      const musicKey = result.req1.data.musickey;
-      ['qm_keyst', 'qqmusic_key'].forEach(k => {
-        res.cookie(k, musicKey, { expires: new Date(Date.now() + 86400000) });
-      });
-      return res.send({
-        result: 100,
-        data: {
-          musickey: result.req1.data.musickey,
-        },
-      });
-    }
-    return res.send({
-      result: 200,
-      errMsg: '刷新失败，建议重新设置cookie',
-    });
   },
+  // '/refresh': async ({ req, res, request }) => {
+  //   // req
+  //   const { uin, qm_keyst, qqmusic_key } = req.cookies;
+  //   if (!uin || !(qm_keyst || qqmusic_key)) {
+  //     return res.send({
+  //       result: 301,
+  //       errMsg: '未登陆',
+  //     });
+  //   }
+  //   const data = {
+  //     req1: {
+  //       module: 'QQConnectLogin.LoginServer',
+  //       method: 'QQLogin',
+  //       param: {
+  //         expired_in: 7776000, //不用管
+  //         // onlyNeedAccessToken: 0, //不用管
+  //         // forceRefreshToken: 0, //不用管
+  //         // access_token: "6B0C62126368CA1ACE16C932C679747E", //access_token
+  //         // refresh_token: "25BACF1650EE2592D06BCC19EEAD7AD6", //refresh_token
+  //         musicid: uin, //uin或者web_uin 微信没试过
+  //         musickey: qm_keyst || qqmusic_key, //key
+  //       },
+  //     },
+  //   };
+  //   const sign = getSign(data);
+  //   let url = `https://u6.y.qq.com/cgi-bin/musics.fcg?sign=${sign}&format=json&inCharset=utf8&outCharset=utf-8&data=${encodeURIComponent(
+  //     JSON.stringify(data),
+  //   )}`;
+
+  //   const result = await request({ url });
+
+  //   if (result.req1 && result.req1.data && result.req1.data.musickey) {
+  //     const musicKey = result.req1.data.musickey;
+  //     ['qm_keyst', 'qqmusic_key'].forEach(k => {
+  //       res.cookie(k, musicKey, { expires: new Date(Date.now() + 86400000) });
+  //     });
+  //     return res.send({
+  //       result: 100,
+  //       data: {
+  //         musickey: result.req1.data.musickey,
+  //       },
+  //     });
+  //   }
+  //   return res.send({
+  //     result: 200,
+  //     errMsg: '刷新失败，建议重新设置cookie',
+  //   });
+  // },
 
   '/getCookie': ({ req, res, globalCookie }) => {
     const { id } = req.query;

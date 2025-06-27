@@ -22,6 +22,7 @@
     "node": ">=12"
   },
   "dependencies": {
+    "@jixun/qmweb-sign": "^2.0.3",
     "axios": "^0.21.2",
     "cheerio": "^1.0.0-rc.3",
     "cookie-parser": "~1.4.4",
